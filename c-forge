@@ -1,181 +1,279 @@
 #!/usr/bin/env bash
+# create_project_full.sh
+# Create a C++ project scaffold (src/, include/, CMakeLists.txt, build.sh),
+# place input.txt/output.txt in project root, add static build support,
+# and optionally build the project immediately.
+#
+# Usage:
+#   ./create_project_full.sh -p <project_name> [--static] [--build]
+# Example:
+#   ./create_project_full.sh -p demo_project --build
+#   ./create_project_full.sh -p demo_static --static --build
 
-echo "############################"
-echo "####### C-Forge ############"
-echo "############################"
-echo
+set -euo pipefail
 
+SCRIPT_NAME="$(basename "$0")"
 
-log() {
-    curr_time=$(date "+%Y-%m-%d %H:%M:%S")
-    echo "[$curr_time][LOG] $1"
+usage() {
+  cat <<EOF
+Usage: $SCRIPT_NAME -p <project_name> [--static] [--build] [--help]
+
+  -p <name>     Project name (required)
+  --static      Mark project generation to prefer static builds (sets STATIC_BUILD ON in CMake)
+  --build       After creation, run build.sh to configure & build immediately
+  -h, --help    Show this help
+EOF
 }
 
-proj_name=${1:-'test_project'}
+# Defaults
+PROJECT_NAME=""
+GEN_STATIC="OFF"
+DO_BUILD="OFF"
 
-if [ "$proj_name" == "test_project" ]; then
-    log "No project name entered!"
-    exit 1
+# Parse args (supports long options)
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 1
 fi
 
-
-help() {
-    echo "Help: "
-    echo "  Usage: $0 <project_name> <options>"
-    echo "    -h          Show help"
-    echo "    -p <name>   Specify project name (required)"
-    echo "    -s          Enable static build (optional)"
-    echo
-    echo "  Generate a C/C++ Project Scaffold"
-    echo "  Example: $0 -p my_project -s"
-}
-
-static_build=""
-while getopts ":hp:s" opt; do
-  case $opt in
-    h)
-      help
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -p)
+      shift
+      PROJECT_NAME="${1:-}"
+      shift
+      ;;
+    --static)
+      GEN_STATIC="ON"
+      shift
+      ;;
+    --build)
+      DO_BUILD="ON"
+      shift
+      ;;
+    -h|--help)
+      usage
       exit 0
       ;;
-    p)
-      proj_name="$OPTARG"
-      ;;
-    s)
-        log "Static build enabled"
-        static_build="-static"
-        ;;
-    \?)
-      log "Invalid option: -$OPTARG"
-      help
-      exit 1
-      ;;
-    :)
-      log "Option -$OPTARG requires an argument."
-      help
+    *)
+      echo "Unknown arg: $1"
+      usage
       exit 1
       ;;
   esac
 done
 
-if [ -d "$proj_name" ]; then
-    log "Directory $proj_name already exists!"
-    exit 1
+if [[ -z "$PROJECT_NAME" ]]; then
+  echo "Error: project name required."
+  usage
+  exit 1
 fi
 
-log "Creating project directory: $proj_name"
-mkdir "$proj_name"
-cd "$proj_name" || exit 1
+if [[ -d "$PROJECT_NAME" ]]; then
+  echo "Error: directory '$PROJECT_NAME' already exists. Aborting."
+  exit 1
+fi
 
-log "Creating source file"
-cat <<EOL > main.cpp
+echo "Creating project '$PROJECT_NAME' (static default: $GEN_STATIC)"
+
+mkdir -p "${PROJECT_NAME}"
+cd "${PROJECT_NAME}"
+
+# create directories
+mkdir -p src include build
+
+# create sample header
+cat > include/sample.h <<'H'
+#pragma once
+// sample header: put your declarations here
+void sample_function();
+H
+
+# create sample source (src/main.cpp)
+cat > src/main.cpp <<'CPP'
+#include <cstdio>
 #include <iostream>
-#include <vector>
-#include <string>
-#include <algorithm>
+#include "sample.h"
 
-class Solution {
-public:
-    // Add your solution here
-};
+void sample_function() {
+    // stub
+}
 
 int main() {
-    Solution solution;
-    // Add test cases here
+    if (!freopen("input.txt", "r", stdin)) {
+        perror("freopen input.txt");
+        return 1;
+    }
+    if (!freopen("output.txt", "w", stdout)) {
+        perror("freopen output.txt");
+        return 1;
+    }
+
+    std::cout << "Hello, Project Root!\n";
+
+    int x;
+    if (scanf("%d", &x) == 1) {
+        printf("Entered: %d\n", x);
+    } else {
+        fprintf(stderr, "No integer found in input.txt\n");
+    }
     return 0;
 }
-EOL
+CPP
 
-log "Initializing CMake project"
-cat <<EOL > CMakeLists.txt
+# create input/output in project root
+cat > input.txt <<'IN'
+123
+IN
+: > output.txt
+
+# Write CMakeLists.txt with STATIC_BUILD support and post-build copy to project root
+cat > CMakeLists.txt <<EOF
 cmake_minimum_required(VERSION 3.10)
-project($proj_name)
+project(${PROJECT_NAME})
 
-# Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Set build type if not set
+# default can be overridden at configure time, or set by generator
+set(STATIC_BUILD ${GEN_STATIC} CACHE BOOL "Enable static build (ON/OFF)")
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Add compiler warnings
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_CXX_FLAGS "\${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic ${static_build}")
+  add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# Add the executable
-add_executable(\${PROJECT_NAME} main.cpp)
-EOL
+include_directories(\${CMAKE_CURRENT_SOURCE_DIR}/include)
+file(GLOB_RECURSE PROJECT_SOURCES \${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 
-log "Creating build script"
-cat <<EOL > build.sh
+add_executable(\${PROJECT_NAME} \${PROJECT_SOURCES})
+
+# If STATIC_BUILD ON and using GNU/Clang, add linker options for static
+if(STATIC_BUILD)
+  message(STATUS "STATIC_BUILD is ON")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # Add link options to statically link libgcc/libstdc++ as well as system libs
+    target_link_options(\${PROJECT_NAME} PRIVATE -static -static-libgcc -static-libstdc++)
+  else()
+    message(WARNING "STATIC_BUILD requested but platform/compiler may not support static linking.")
+  endif()
+endif()
+
+# Copy the built binary to project root (so users can run ./<project> from root)
+add_custom_command(TARGET \${PROJECT_NAME}
+    POST_BUILD
+    COMMAND \${CMAKE_COMMAND} -E copy_if_different
+            \$<TARGET_FILE:\${PROJECT_NAME}>
+            \${CMAKE_CURRENT_SOURCE_DIR}/\$<TARGET_FILE_NAME:\${PROJECT_NAME}>
+    COMMENT "Copying binary to project root"
+)
+
+# convenience target to run the binary from project root
+add_custom_target(run-from-root
+    COMMAND \${CMAKE_COMMAND} -E echo "Running \${PROJECT_NAME} from project root (\${CMAKE_CURRENT_SOURCE_DIR})"
+    COMMAND \${CMAKE_COMMAND} -E chdir \${CMAKE_CURRENT_SOURCE_DIR} \${CMAKE_CURRENT_SOURCE_DIR}/\$<TARGET_FILE_NAME:\${PROJECT_NAME}>
+    DEPENDS \${PROJECT_NAME}
+    WORKING_DIRECTORY \${CMAKE_CURRENT_SOURCE_DIR}
+    USES_TERMINAL
+)
+EOF
+
+# build.sh: the wrapper that configures & builds (with static detection and banners)
+cat > build.sh <<'SH'
 #!/usr/bin/env bash
+set -euo pipefail
 
-# Create clean build directory
-rm -rf build
-mkdir build
-cd build || exit 1
+# build.sh - builds the project, optionally as static.
+# Usage: ./build.sh [-s|--static] [-h|--help]
 
-# Configure and build
-if ! cmake ..; then
-    echo "CMake configuration failed!"
-    exit 1
-fi
-
-# Check if build was successful
-if ! make -j\"$(nproc)\"; then
-    echo "Build successful! Binary is in build/"
+# Colors if available
+if command -v tput >/dev/null 2>&1; then
+  GREEN="$(tput setaf 2)"
+  CYAN="$(tput setaf 6)"
+  YELLOW="$(tput setaf 3)"
+  RED="$(tput setaf 1)"
+  RESET="$(tput sgr0)"
 else
-    echo "Build failed!"
-    exit 1
+  GREEN=""; CYAN=""; YELLOW=""; RED=""; RESET=""
 fi
-EOL
 
-# Make build script executable
+show_banner() {
+  local color="$1"; local msg="$2"
+  echo
+  echo "${color}============================================================${RESET}"
+  echo "${color}${msg}${RESET}"
+  echo "${color}============================================================${RESET}"
+  echo
+}
+
+STATIC_REQUESTED="OFF"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -s|--static) STATIC_REQUESTED="ON"; shift ;;
+    -h|--help) echo "Usage: $0 [-s|--static]"; exit 0 ;;
+    *) echo "Unknown arg: $1"; echo "Usage: $0 [-s|--static]"; exit 1 ;;
+  esac
+done
+
+# Prepare build dir
+rm -rf build
+mkdir -p build
+cd build
+
+CMAKE_ARGS=()
+if [[ "$STATIC_REQUESTED" == "ON" ]]; then
+  CMAKE_ARGS+=("-DSTATIC_BUILD=ON")
+  show_banner "${YELLOW}" "Static build requested — configuring CMake with -DSTATIC_BUILD=ON"
+fi
+
+echo "[LOG] Running: cmake .. ${CMAKE_ARGS[*]}"
+cmake .. "${CMAKE_ARGS[@]}"
+
+# Inspect CMakeCache to determine whether STATIC_BUILD is ON
+STATIC_EFFECTIVE="OFF"
+if [[ -f CMakeCache.txt ]] && grep -q -E "^STATIC_BUILD:.*=ON" CMakeCache.txt; then
+  STATIC_EFFECTIVE="ON"
+fi
+
+if [[ "$STATIC_EFFECTIVE" == "ON" ]]; then
+  show_banner "${GREEN}" "Building STATIC binary (STATIC_BUILD=ON)"
+else
+  show_banner "${CYAN}" "Building dynamic binary (STATIC_BUILD=OFF)"
+fi
+
+# Build using cmake --build for portability
+cmake --build . --config Release -- -j"$(nproc)"
+
+BINNAME="$(basename "$(pwd)/..")"
+if [[ "$STATIC_EFFECTIVE" == "ON" ]]; then
+  echo "${GREEN}Build finished — static binary copied to project root as ./${BINNAME}${RESET}"
+  if command -v ldd >/dev/null 2>&1; then
+    echo "${YELLOW}Tip: check with: ldd ./${BINNAME}${RESET}"
+  fi
+else
+  echo "${CYAN}Build finished — binary copied to project root as ./${BINNAME}${RESET}"
+fi
+
+echo
+echo "Run: ./${BINNAME}"
+SH
+
 chmod +x build.sh
 
-log "Creating main.cpp"
-cat <<EOL > main.cpp
-#include <iostream>
-
-int main() {
-    freopen("input.txt", "r", stdin);
-    freopen("output.txt", "w", stdout);
-    std::cout << "Hello, World!" << std::endl;
-    return 0;
-}
-EOL
-
-log "Creating build directory"
-mkdir build
-cd build || exit 1
-
-log "Running CMake"
-if ! cmake ..; then
-    log "CMake configuration failed!"
-    exit 1
+# optionally run build now
+if [[ "$DO_BUILD" == "ON" ]]; then
+  echo "Running build.sh (you can pass -s to build static):"
+  ./build.sh
 fi
 
-log "Building project"
-if ! make; then
-    log "Build failed!"
-    exit 1
-fi
-
-if ! touch ../output.txt ../input.txt; then
-    log "Failed to create input.txt and output.txt"
-    exit 1
-fi
-
-cp "$(basename "$proj_name")" ../ || {
-    log "Failed to copy executable to parent directory"
-    exit 1
-}
-
-log "Project $proj_name created and built successfully!"
-log "Update main.cpp with your solution, and run the executable in the build directory."
-log "To run the executable, use: ./$(basename "$proj_name")"
-log "Input will be taken from input.txt and output will be written to output.txt"
-log "To Rebuild the project, run ./build.sh"
+echo
+echo "Project '${PROJECT_NAME}' scaffold created."
+echo "  cd ${PROJECT_NAME}"
+echo "  ./build.sh                # build dynamically"
+echo "  ./build.sh -s             # build statically (requests -DSTATIC_BUILD=ON)"
+echo "After a successful build the binary will be copied to project root as ./${PROJECT_NAME}"
+echo "Input & output files are in project root: input.txt, output.txt"
