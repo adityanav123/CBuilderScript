@@ -6,11 +6,13 @@ mkdir build
 cd build || exit 1
 
 # Configure and build
-cmake ..
-make -j\"12\"
+if ! cmake ..; then
+    echo "CMake configuration failed!"
+    exit 1
+fi
 
 # Check if build was successful
-if [ $? -eq 0 ]; then
+if ! make -j\"12\"; then
     echo "Build successful! Binary is in build/"
 else
     echo "Build failed!"
