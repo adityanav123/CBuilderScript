@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+echo "############################"
+echo "####### C-Forge ############"
+echo "############################"
+echo
+
+
 log() {
     curr_time=$(date "+%Y-%m-%d %H:%M:%S")
     echo "[$curr_time][LOG] $1"
@@ -14,12 +20,18 @@ fi
 
 
 help() {
-    echo "Usage: $0 <project_name>"
-    echo "Solve a LeetCode Problem in C/C++"
-    echo "Example: $0 my_leetcode_project"
+    echo "Help: "
+    echo "  Usage: $0 <project_name> <options>"
+    echo "    -h          Show help"
+    echo "    -p <name>   Specify project name (required)"
+    echo "    -s          Enable static build (optional)"
+    echo
+    echo "  Generate a C/C++ Project Scaffold"
+    echo "  Example: $0 -p my_project -s"
 }
 
-while getopts ":hp:" opt; do
+static_build=""
+while getopts ":hp:s" opt; do
   case $opt in
     h)
       help
@@ -28,6 +40,10 @@ while getopts ":hp:" opt; do
     p)
       proj_name="$OPTARG"
       ;;
+    s)
+        log "Static build enabled"
+        static_build="-static"
+        ;;
     \?)
       log "Invalid option: -$OPTARG"
       help
@@ -86,7 +102,7 @@ endif()
 
 # Add compiler warnings
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_CXX_FLAGS "\${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic")
+    set(CMAKE_CXX_FLAGS "\${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic ${static_build}")
 endif()
 
 # Add the executable
