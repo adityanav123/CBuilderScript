@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+
+log() {
+    curr_time=$(date "+%Y-%m-%d %H:%M:%S")
+    echo "[$curr_time][LOG] $1"
+}
+
+proj_name=${1:-'test_project'}
+
+if [ "$proj_name" == "test_project" ]; then
+    log "No project name entered!"
+    exit 1
+fi
+
+
+help() {
+    echo "Usage: $0 <project_name>"
+    echo "Solve a LeetCode Problem in C/C++"
+    echo "Example: $0 my_leetcode_project"
+}
+
+while getopts ":hp:" opt; do
+  case $opt in
+    h)
+      help
+      exit 0
+      ;;
+    p)
+      proj_name="$OPTARG"
+      ;;
+    \?)
+      log "Invalid option: -$OPTARG"
+      help
+      exit 1
+      ;;
+    :)
+      log "Option -$OPTARG requires an argument."
+      help
+      exit 1
+      ;;
+  esac
+done
+
+if [ -d "$proj_name" ]; then
+    log "Directory $proj_name already exists!"
+    exit 1
+fi
+
+log "Creating project directory: $proj_name"
+mkdir "$proj_name"
+cd "$proj_name" || exit 1
+
+log "Creating source file"
+cat <<EOL > main.cpp
+#include <iostream>
+#include <vector>
+#include <string>
+#include <algorithm>
+
+class Solution {
+public:
+    // Add your solution here
+};
+
+int main() {
+    Solution solution;
+    // Add test cases here
+    return 0;
+}
+EOL
+
+log "Initializing CMake project"
+cat <<EOL > CMakeLists.txt
+cmake_minimum_required(VERSION 3.10)
+project($proj_name)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Set build type if not set
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# Add compiler warnings
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(CMAKE_CXX_FLAGS "\${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic")
+endif()
+
+# Add the executable
+add_executable(\${PROJECT_NAME} main.cpp)
+EOL
+
+log "Creating build script"
+cat <<EOL > build.sh
+#!/usr/bin/env bash
+
+# Create clean build directory
+rm -rf build
+mkdir build
+cd build || exit 1
+
+# Configure and build
+cmake ..
+make -j\"$(nproc)\"
+
+# Check if build was successful
+if [ \$? -eq 0 ]; then
+    echo "Build successful! Binary is in build/"
+else
+    echo "Build failed!"
+    exit 1
+fi
+EOL
+
+# Make build script executable
+chmod +x build.sh
+
+log "Creating main.cpp"
+cat <<EOL > main.cpp
+#include <iostream>
+
+int main() {
+    freopen("input.txt", "r", stdin);
+    freopen("output.txt", "w", stdout);
+    std::cout << "Hello, LeetCode!" << std::endl;
+    return 0;
+}
+EOL
+
+log "Creating build directory"
+mkdir build
+cd build || exit 1
+
+log "Running CMake"
+if ! cmake ..; then
+    log "CMake configuration failed!"
+    exit 1
+fi
+
+log "Building project"
+if ! make; then
+    log "Build failed!"
+    exit 1
+fi
+
+if ! touch ../output.txt ../input.txt; then
+    log "Failed to create input.txt and output.txt"
+    exit 1
+fi
+
+cp "$(basename "$proj_name")" ../ || {
+    log "Failed to copy executable to parent directory"
+    exit 1
+}
+
+log "Project $proj_name created and built successfully!"
+log "Update main.cpp with your solution, and run the executable in the build directory."
+log "To run the executable, use: ./$(basename "$proj_name")"
