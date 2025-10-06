@@ -103,11 +103,13 @@ mkdir build
 cd build || exit 1
 
 # Configure and build
-cmake ..
-make -j\"$(nproc)\"
+if ! cmake ..; then
+    echo "CMake configuration failed!"
+    exit 1
+fi
 
 # Check if build was successful
-if [ \$? -eq 0 ]; then
+if ! make -j\"$(nproc)\"; then
     echo "Build successful! Binary is in build/"
 else
     echo "Build failed!"
@@ -125,7 +127,7 @@ cat <<EOL > main.cpp
 int main() {
     freopen("input.txt", "r", stdin);
     freopen("output.txt", "w", stdout);
-    std::cout << "Hello, LeetCode!" << std::endl;
+    std::cout << "Hello, World!" << std::endl;
     return 0;
 }
 EOL
@@ -159,3 +161,5 @@ cp "$(basename "$proj_name")" ../ || {
 log "Project $proj_name created and built successfully!"
 log "Update main.cpp with your solution, and run the executable in the build directory."
 log "To run the executable, use: ./$(basename "$proj_name")"
+log "Input will be taken from input.txt and output will be written to output.txt"
+log "To Rebuild the project, run ./build.sh"
