@@ -65,6 +65,7 @@ chmod +x c-forge
 
 - `-h`: Display help message
 - `-p <project_name>`: Specify project name
+- `-s`: Generate Static Build
 
 ## Project Structure
 
